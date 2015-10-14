@@ -1,8 +1,8 @@
 #include "Tlc5940.h"
 #include <Bounce.h>
 #include <Wire.h>
-#include <MIDI.h>                   //TODO ACCEL CONR SEND WITH BUTTONLOW TO SWITCH IT ON AND OFF, probs sec var needed
-#define MIDI_CHAN 3                 //BANK CHANGE SWITCH ALL MIDI NOTES OFF, MAYBE AS START RESET FUNCTION, TOO
+#include <MIDI.h>                   
+#define MIDI_CHAN 3                 //EPROM INCLUDE?
                                     //MAYBE NEW BUTTON
 
 #define HIGHTHRESH 540              //the frs threshold that plays the note                                
@@ -15,7 +15,7 @@ bool fsrPress[FSR_N];
 int fsrmidiVol[FSR_N];
 
 int scale0[] = {37, 38, 39, 40, 41, 42, 43, 44, 36};     //a chromatic scale, use this only for drum pads
-int scale1[] = {53, 54, 55, 56, 57, 58, 59, 60, 52};     // the last pin is the first note, to hav ethe big pad as the start of the standard ableton drumrack setup
+int scale1[] = {53, 54, 55, 56, 57, 58, 59, 60, 52};     // the last pin is the first note, to have the big pad as the start of the standard ableton drumrack setup
 
       //for now, scale0 for bank0, scale for bank1, if other functions, use banks
     

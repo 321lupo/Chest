@@ -1,7 +1,8 @@
 #include "Tlc5940.h"
 #include <Bounce.h>
 #include <Wire.h>
-#include <MIDI.h>                   
+#include <MIDI.h>      
+             
 #define MIDI_CHAN 3                 //EPROM INCLUDE?
                                     //MAYBE NEW BUTTON
 
@@ -36,10 +37,11 @@ int tlcallPins[] = {1,2,3,4,5,6,7,8,9,10,11,12,13,14,16,17,18,19,20,21,22,23,24,
 #define TLCALLPIN_N 30              //max value on chip is 3000/40000 
 #define DELAY_LEDS 3                //the delay to make sure the chip can handle the data load..
 
-#define BANKS_N 3                       //number of banks
+#define BANKS_N 2                       //number of banks
 int bank = 0;
 
 int accelSwitch = 0;
+int accel2Switch = 0;
 #define CTRL_START 51
 int16_t accel_x, accel_y, accel_z;                        //accelerometer
 #define accel_module (0x53)                               //x-left/right -100 to 100 y back front -275 top, to -200 leanover in both directions. z not working...
@@ -50,6 +52,10 @@ unsigned long startTime[FSR_N];   //millis bounce function
 unsigned long millisTime;
 bool fsrBounce[FSR_N];
 int bounceTime = 100;
+                
+unsigned long stopTime;            
+bool stopBool = false;
+int stopHold = 2000;                         //time to hold down buttons to send del-msg
 
 
 void setup(void) {
@@ -67,6 +73,11 @@ void setup(void) {
     startTime[i]=0;
     fsrBounce[i]=true;
   }
+
+  usbMIDI.setHandleNoteOff(OnNoteOff);
+  usbMIDI.setHandleNoteOn(OnNoteOn);
+
+  
   /*
   clearLeds();                            //little led boot-up play
   for (int i=0; i<TLCBLUEPIN_N; i++)   {
@@ -108,22 +119,30 @@ void loop(void) {                                   //MAIN CODE
 
   if(ButtonUp.fallingEdge()) {              //3 banks and the buttons switch through them BLUE==MODE0, TURKOISE==MODE1, GREEN=MODE2
     bank++;                                 //Leds show bank on button switch when control or midi notes are being sent                                
-    if (bank>=3) bank=BANKS_N-3;;
+    if (bank>=2) bank=BANKS_N-2;;
     bankLeds();   
     resetPress();                           //resets the press booleans on every bank change  
+    stopTime=millisTime;
+    stopBool=true;
   }
-  else if(ButtonDown.fallingEdge()) {
-    bank=bank-1;
-    if (bank<=-1) bank=BANKS_N-1;
-    bankLeds();
-    resetPress();                           
-  } 
+  if (ButtonUp.risingEdge()) {
+    stopBool=false;
+  }
+  if (millisTime-stopTime>=stopHold && stopBool==true) {
+    stopBool=false;
+    bank=2;
+  }
   if(ButtonLow.fallingEdge()) {
     accelSwitch++;
     if (accelSwitch>=2) accelSwitch = 0;
     accelswitchLeds();
   }
-    
+   if(ButtonDown.fallingEdge()) {
+    accel2Switch++;
+    if (accel2Switch>=2) accel2Switch = 0;
+    accelswitchLeds();
+                         
+  } 
   Serial.println(bank); 
   Serial.println(accelSwitch);
 
@@ -134,11 +153,27 @@ void loop(void) {                                   //MAIN CODE
     int xctrllevel = map (accel_x, -100, 100, 0, 127);  
     usbMIDI.sendControlChange(CTRL_START, xctrllevel, MIDI_CHAN); 
     */
+    Serial.println (accel_y);
     if (accel_y<-275) accel_y=-275;
-    if (accel_y>-200) accel_y=-200;
-    int yctrllevel = map (accel_y, -200, -275, 0, 127);  
+    if (accel_y>-140) accel_y=-140;
+    int yctrllevel = map (accel_y, -140, -275, 0, 127);  
     usbMIDI.sendControlChange(CTRL_START, yctrllevel, MIDI_CHAN); 
-      
+    Serial.println (accel_y);
+  }
+    if (accel2Switch == 1) {                                 //x-left/right -100 to 100 y back front -275 top, to -200 leanover in both directions. z not working...
+    Serial.println (accel_x);
+    if (accel_x<-100) accel_x=-100;
+    if (accel_x>100) accel_x=100;
+    int xctrllevel = map (accel_x, -100, 100, 0, 127);  
+    usbMIDI.sendControlChange(CTRL_START+1, xctrllevel, MIDI_CHAN); 
+    /*
+    Serial.println (accel_y);
+    if (accel_y<-275) accel_y=-275;
+    if (accel_y>-140) accel_y=-140;
+    int yctrllevel = map (accel_y, -140, -275, 0, 127);  
+    usbMIDI.sendControlChange(CTRL_START, yctrllevel, MIDI_CHAN);
+    */ 
+    Serial.println (accel_y);
   }
   
   if (bank!=2){
@@ -330,6 +365,75 @@ void resetScales(){
   }
 }
 
+void OnNoteOn(byte channel, byte note, byte velocity) {
+  Serial.print("Note On, ch=");
+  Serial.print(channel, DEC);
+  Serial.print(", note=");
+  Serial.print(note, DEC);
+  Serial.print(", velocity=");
+  Serial.print(velocity, DEC);
+  Serial.println();
+  for(int i=0; i<FSR_N; i++){  
+    if (note==scale0[i]){
+      Tlc.set(tlcbluePins[i], 3000);                      //switch respective led on
+      if (note==scale0[8]) {                              //main fsr has an additional LED not covered by the main led function
+        Tlc.set(tlcbluePins[9],3000);             
+      } 
+      Tlc.update();
+      delay(DELAY_LEDS); 
+    }
+  }
+  for(int i=0; i<FSR_N; i++){  
+    if (note==scale1[i]){
+      Tlc.set(tlcbluePins[i], 3000);                      //switch respective led on
+      //Tlc.set(tlcgreenPins[i],3000);
+      if (note==scale0[8]) {                              //main fsr has an additional LED not covered by the main led function
+        Tlc.set(tlcbluePins[9],3000);  
+        //Tlc.set(tlcgreenPins[i],3000);        
+      } 
+      Tlc.update();
+      delay(DELAY_LEDS); 
+    }
+  }
+}
 
+void OnNoteOff(byte channel, byte note, byte velocity) {
+  Serial.print("Note Off, ch=");
+  Serial.print(channel, DEC);
+  Serial.print(", note=");
+  Serial.print(note, DEC);
+  Serial.print(", velocity=");
+  Serial.print(velocity, DEC);
+  Serial.println();
+  /*
+  for(int i=0; i<FSR_N; i++){  
+    if (note==scale0[i]){
+      Tlc.set(tlcbluePins[i], 0);                      //switch respective led on
+      if (note==scale0[8]) {                              //main fsr has an additional LED not covered by the main led function
+        Tlc.set(tlcbluePins[9],0);             
+      } 
+      Tlc.update();
+      delay(DELAY_LEDS); 
+    }
+  }
+  for(int i=0; i<FSR_N; i++){  
+    if (note==scale1[i]){
+      Tlc.set(tlcbluePins[i], 0);                      //switch respective led on
+      //Tlc.set(tlcgreenPins[i],0);
+      if (note==scale0[8]) {                              //main fsr has an additional LED not covered by the main led function
+        Tlc.set(tlcbluePins[9],0);  
+       // Tlc.set(tlcgreenPins[i],0);        
+      } 
+      Tlc.update();
+      delay(DELAY_LEDS); 
+    }
+  }
+  */
+  clearLeds();
+}
+
+
+
+    
 
 

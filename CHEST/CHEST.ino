@@ -1,11 +1,11 @@
 #include "Tlc5940.h"
 #include <Bounce.h>
 #include <Wire.h>
-#include <MIDI.h>      
+#include <MIDI.h>   
+#include <usb_keyboard.h>   
              
-#define MIDI_CHAN 3                 //EPROM INCLUDE?
-                                    //MAYBE NEW BUTTON
-
+#define MIDI_CHAN 3               
+                                    
 #define HIGHTHRESH 540              //the frs threshold that plays the note                                
 #define LOWTHRESH 900               //to be able to play again the fsr needs to jump back above this value                                           
 #define FSR_N 9                                                 
@@ -40,7 +40,7 @@ int tlcallPins[] = {1,2,3,4,5,6,7,8,9,10,11,12,13,14,16,17,18,19,20,21,22,23,24,
 #define BANKS_N 2                       //number of banks
 int bank = 0;
 
-int accelSwitch = 0;
+int accel1Switch = 0;
 int accel2Switch = 0;
 #define CTRL_START 51
 int16_t accel_x, accel_y, accel_z;                        //accelerometer
@@ -57,10 +57,24 @@ unsigned long stopTime;
 bool stopBool = false;
 int stopHold = 2000;                         //time to hold down buttons to send del-msg
 
+unsigned long ctrl1midiTime=0;
+unsigned long ctrl2midiTime=0;
+#define CTRLMIDI_TIME 50
+int ctrl1var;
+int ctrl1varold=0;
+int ctrl2var;
+int ctrl2varold=0;
+
+
+IntervalTimer myTimer;                      //interrupt counter
+int counter=0;
+
 
 void setup(void) {
  
   Serial.begin(9600);                     //serial monitor start
+  myTimer.begin(heartbeat, 10000000);     // Time in microseconds (10s)
+  
   initAccel();
   Tlc.init();                             //inits fo all sensors and led chips
   initFsrs();
@@ -73,11 +87,7 @@ void setup(void) {
     startTime[i]=0;
     fsrBounce[i]=true;
   }
-
-  usbMIDI.setHandleNoteOff(OnNoteOff);
-  usbMIDI.setHandleNoteOn(OnNoteOn);
-
-  
+    
   /*
   clearLeds();                            //little led boot-up play
   for (int i=0; i<TLCBLUEPIN_N; i++)   {
@@ -131,49 +141,86 @@ void loop(void) {                                   //MAIN CODE
   if (millisTime-stopTime>=stopHold && stopBool==true) {
     stopBool=false;
     bank=2;
+    bankLeds();
   }
   if(ButtonLow.fallingEdge()) {
-    accelSwitch++;
-    if (accelSwitch>=2) accelSwitch = 0;
-    accelswitchLeds();
+    accel1Switch++;
+    if (accel1Switch>=2) accel1Switch = 0;
+    accel1SwitchLeds();
   }
    if(ButtonDown.fallingEdge()) {
     accel2Switch++;
-    if (accel2Switch>=2) accel2Switch = 0;
-    accelswitchLeds();
+    if (accel2Switch>=2) {
+      accel2Switch = 0;
+   /*
+      Keyboard.set_modifier(MODIFIERKEY_CTRL);
+      Keyboard.set_key1(KEY_Z);
+      Keyboard.send_now();
+      Keyboard.set_modifier(0);
+      Keyboard.set_key1(0);
+      Keyboard.send_now();    
+    */
+    }
+    accel2switchLeds();
                          
   } 
-  Serial.println(bank); 
-  Serial.println(accelSwitch);
+  //serial.println(bank); 
+  //serial.println(accel1Switch);
 
-  if (accelSwitch == 1) {                                 //x-left/right -100 to 100 y back front -275 top, to -200 leanover in both directions. z not working...
+  if (accel1Switch == 1 &&  millisTime-ctrl1midiTime>CTRLMIDI_TIME) {                                 //x-left/right -100 to 100 y back front -275 top, to -200 leanover in both directions. z not working...
     /*
     if (accel_x<-100) accel_x=-100;
     if (accel_x>100) accel_x=100;
     int xctrllevel = map (accel_x, -100, 100, 0, 127);  
     usbMIDI.sendControlChange(CTRL_START, xctrllevel, MIDI_CHAN); 
-    */
-    Serial.println (accel_y);
-    if (accel_y<-275) accel_y=-275;
-    if (accel_y>-140) accel_y=-140;
-    int yctrllevel = map (accel_y, -140, -275, 0, 127);  
-    usbMIDI.sendControlChange(CTRL_START, yctrllevel, MIDI_CHAN); 
-    Serial.println (accel_y);
-  }
-    if (accel2Switch == 1) {                                 //x-left/right -100 to 100 y back front -275 top, to -200 leanover in both directions. z not working...
+    Serial.print ("accel1_x ");
     Serial.println (accel_x);
-    if (accel_x<-100) accel_x=-100;
-    if (accel_x>100) accel_x=100;
-    int xctrllevel = map (accel_x, -100, 100, 0, 127);  
-    usbMIDI.sendControlChange(CTRL_START+1, xctrllevel, MIDI_CHAN); 
-    /*
-    Serial.println (accel_y);
+    */
     if (accel_y<-275) accel_y=-275;
     if (accel_y>-140) accel_y=-140;
-    int yctrllevel = map (accel_y, -140, -275, 0, 127);  
-    usbMIDI.sendControlChange(CTRL_START, yctrllevel, MIDI_CHAN);
-    */ 
-    Serial.println (accel_y);
+    ctrl1var = map (accel_y, -140, -275, 0, 127);  
+    if (ctrl1var != ctrl1varold) {
+      usbMIDI.sendControlChange(CTRL_START, ctrl1var, MIDI_CHAN); 
+      ctrl1varold = ctrl1var;
+      Serial.print ("CTRL: ");
+      Serial.print (CTRL_START);
+      Serial.print (" Channel: ");
+      Serial.print (MIDI_CHAN);
+      Serial.print (" Accel_y ");
+      Serial.print (accel_y);
+      Serial.print (" Val: ");
+      Serial.println (ctrl1var);
+    }
+
+    ctrl1midiTime = millisTime;
+  }
+  if (accel2Switch == 1 &&  millisTime-ctrl2midiTime>CTRLMIDI_TIME) {                                 //x-left/right -100 to 100 y back front -275 top, to -200 leanover in both directions. z not working...
+    /*if (accel_x<0) accel_x=accel_x*-1;
+    if (accel_x>130) accel_x=130;
+    int xctrllevel = map(accel_x, 0, 130, 127, 0);  
+    usbMIDI.sendControlChange(CTRL_START+1, xctrllevel, MIDI_CHAN);
+    Serial.print ("accel2_x ");
+    Serial.println (accel_x);
+    */
+    if (accel_y<-275) accel_y=-275;
+    if (accel_y>-140) accel_y=-140;
+    int ctrl2var = map (accel_y, -140, -275, 0, 127);  
+    if (ctrl2var != ctrl2varold) {
+      usbMIDI.sendControlChange(36, ctrl2var, 2);                                                     //respective value on gauntlet
+      //usbMIDI.sendControlChange(CTRL_START+1, yctrllevel, MIDI_CHAN); 
+      ctrl2varold=ctrl2var;
+      Serial.print ("CTRL: ");
+      Serial.print ("36");
+      Serial.print (" Channel: ");
+      Serial.print ("2");
+      Serial.print (" Accel_y: ");
+      Serial.print (accel_y);
+      Serial.print (" Val: ");
+      Serial.println (ctrl2var);
+    }
+     
+    ctrl2midiTime = millisTime;
+
   }
   
   if (bank!=2){
@@ -195,7 +242,7 @@ void loop(void) {                                   //MAIN CODE
         } 
         Tlc.update();
         delay(DELAY_LEDS);                                           //tlc chip needs some extra time, without the delay msgs often dont arrive especially in forloops...
-        Serial.println(fsrPins[i]);
+        //serial.println(fsrPins[i]);
       }
       fsrPress[i]=true;                                 //fsr is  pressed
       }
@@ -268,24 +315,24 @@ void readAccel() {                                        //read accel functions
    accel_y = (((int16_t)values[3]) << 8) | values [2];
    accel_z = (((int16_t)values[5]) << 8) | values [4];
 
-  Serial.print (" X ");
-  Serial.print(accel_x); 
-  Serial.print (" Y ");
-  Serial.print(accel_y);
-  Serial.print (" Z ");
-  Serial.print(accel_z);
-  Serial.print(" ");
+  //serial.print (" X ");
+  //serial.print(accel_x); 
+  //serial.print (" Y ");
+  //serial.print(accel_y);
+  //serial.print (" Z ");
+  //serial.print(accel_z);
+  //serial.print(" ");
 }
 
 void readFsrs(){                          //reads and prints fsr values
   for(int i=0; i<FSR_N; i++){
     fsrReadings[i] = analogRead(fsrPins[i]);
   }
-  for(int i=0;i<FSR_N; i++){
-    Serial.print (fsrReadings[i]);
-    Serial.print (" ");
-  }
-  Serial.println (" ");
+  //for(int i=0;i<FSR_N; i++){
+  //  Serial.print (fsrReadings[i]);
+  //  Serial.print (" ");
+  //}
+  //Serial.println (" ");
 }
 
 void readButtons(){                       //reads buttons
@@ -324,8 +371,8 @@ void bankLeds() {                       //the led functions to show the differen
   }
 }
 
-void accelswitchLeds() {
-  if (accelSwitch==0) {               
+void accel1SwitchLeds() {
+  if (accel1Switch==0) {               
     clearLeds();
     for (int i=0; i<TLCBLUEPIN_N; i++)   {
       Tlc.set(tlcbluePins[i], 400); 
@@ -338,7 +385,31 @@ void accelswitchLeds() {
       delay (DELAY_LEDS);                    
     }
   }
-  else if (accelSwitch==1) {
+  else if (accel1Switch==1) {
+    clearLeds();
+    for (int i=0; i<TLCALLPIN_N; i++) {
+      Tlc.set(tlcallPins[i], 500); 
+      Tlc.update();
+      delay (DELAY_LEDS);  
+    }
+  }
+}
+
+void accel2switchLeds() {
+  if (accel2Switch==0) {               
+    clearLeds();
+    for (int i=0; i<TLCBLUEPIN_N; i++)   {
+      Tlc.set(tlcredPins[i], 400); 
+      Tlc.update(); 
+      delay (DELAY_LEDS);                  
+    }
+    for (int i=0; i<TLCGREENPIN_N; i++)   {
+      Tlc.set(tlcgreenPins[i], 300); 
+      Tlc.update();  
+      delay (DELAY_LEDS);                    
+    }
+  }
+  else if (accel2Switch==1) {
     clearLeds();
     for (int i=0; i<TLCALLPIN_N; i++) {
       Tlc.set(tlcallPins[i], 500); 
@@ -365,73 +436,11 @@ void resetScales(){
   }
 }
 
-void OnNoteOn(byte channel, byte note, byte velocity) {
-  Serial.print("Note On, ch=");
-  Serial.print(channel, DEC);
-  Serial.print(", note=");
-  Serial.print(note, DEC);
-  Serial.print(", velocity=");
-  Serial.print(velocity, DEC);
-  Serial.println();
-  for(int i=0; i<FSR_N; i++){  
-    if (note==scale0[i]){
-      Tlc.set(tlcbluePins[i], 3000);                      //switch respective led on
-      if (note==scale0[8]) {                              //main fsr has an additional LED not covered by the main led function
-        Tlc.set(tlcbluePins[9],3000);             
-      } 
-      Tlc.update();
-      delay(DELAY_LEDS); 
-    }
-  }
-  for(int i=0; i<FSR_N; i++){  
-    if (note==scale1[i]){
-      Tlc.set(tlcbluePins[i], 3000);                      //switch respective led on
-      //Tlc.set(tlcgreenPins[i],3000);
-      if (note==scale0[8]) {                              //main fsr has an additional LED not covered by the main led function
-        Tlc.set(tlcbluePins[9],3000);  
-        //Tlc.set(tlcgreenPins[i],3000);        
-      } 
-      Tlc.update();
-      delay(DELAY_LEDS); 
-    }
-  }
+void heartbeat() {
+  Serial.print("still alive ");
+  Serial.println(counter);
+  counter++;
 }
-
-void OnNoteOff(byte channel, byte note, byte velocity) {
-  Serial.print("Note Off, ch=");
-  Serial.print(channel, DEC);
-  Serial.print(", note=");
-  Serial.print(note, DEC);
-  Serial.print(", velocity=");
-  Serial.print(velocity, DEC);
-  Serial.println();
-  /*
-  for(int i=0; i<FSR_N; i++){  
-    if (note==scale0[i]){
-      Tlc.set(tlcbluePins[i], 0);                      //switch respective led on
-      if (note==scale0[8]) {                              //main fsr has an additional LED not covered by the main led function
-        Tlc.set(tlcbluePins[9],0);             
-      } 
-      Tlc.update();
-      delay(DELAY_LEDS); 
-    }
-  }
-  for(int i=0; i<FSR_N; i++){  
-    if (note==scale1[i]){
-      Tlc.set(tlcbluePins[i], 0);                      //switch respective led on
-      //Tlc.set(tlcgreenPins[i],0);
-      if (note==scale0[8]) {                              //main fsr has an additional LED not covered by the main led function
-        Tlc.set(tlcbluePins[9],0);  
-       // Tlc.set(tlcgreenPins[i],0);        
-      } 
-      Tlc.update();
-      delay(DELAY_LEDS); 
-    }
-  }
-  */
-  clearLeds();
-}
-
 
 
     

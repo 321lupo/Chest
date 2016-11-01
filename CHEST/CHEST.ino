@@ -10,7 +10,6 @@
 #define LOWTHRESH 900               //to be able to play again the fsr needs to jump back above this value                                           
 #define FSR_N 9                                                 
 int fsrPins[] = {15, 17, 40, 20, 21, 23, 22, 16, 14};
-//int fsrPins[] = {A14, A0, A1, A2, A3, A6, A7, A8, A9};
 int fsrReadings[FSR_N];
 bool fsrPress[FSR_N];
 int fsrmidiVol[FSR_N];
@@ -88,13 +87,14 @@ void setup(void) {
     fsrBounce[i]=true;
   }
     
-  /*
+  
   clearLeds();                            //little led boot-up play
   for (int i=0; i<TLCBLUEPIN_N; i++)   {
     Tlc.set(tlcbluePins[i], 3000); 
     Tlc.update();
-    delay(50);  
+    delay(127);  
   }
+  /*
   clearLeds();
   for (int i=0; i<TLCGREENPIN_N; i++)   {
     Tlc.set(tlcgreenPins[i], 3000); 
@@ -108,12 +108,13 @@ void setup(void) {
     delay(50);  
   }
   clearLeds();   
-  */
+  
   for (int i=0; i<TLCALLPIN_N; i++)   {
     Tlc.set(tlcallPins[i], 800); 
     Tlc.update();
     delay(25);  
   }
+  */
   clearLeds();
 }
 
@@ -232,25 +233,54 @@ void loop(void) {                                   //MAIN CODE
                                                                   // and if fsr is not pressed, end note, switch led on,etc.
       if (fsrPress[i]==false){                                                                   
         fsrmidiVol[i] = map (fsrReadings[i], 1024, 0, 0, 127);
-        if (bank==0) usbMIDI.sendNoteOn(scale0[i], fsrmidiVol[i], MIDI_CHAN);
-        else if (bank==1) usbMIDI.sendNoteOn(scale1[i], fsrmidiVol[i], MIDI_CHAN);
+        if (bank==0){
+          usbMIDI.sendNoteOn(scale0[i], fsrmidiVol[i], MIDI_CHAN);
+          Tlc.set(tlcbluePins[i], 3000);                      //switch respective led on
+          if (fsrReadings[8]<=HIGHTHRESH) {                   //main fsr has an additional LED not covered by the main led function
+            Tlc.set(tlcbluePins[9],3000);             
+          } 
+          Tlc.update();
+          delay(DELAY_LEDS);                                           //tlc chip needs some extra time, without the delay msgs often dont arrive especially in forloops...
+        }
+        else if (bank==1) {
+          usbMIDI.sendNoteOn(scale1[i], fsrmidiVol[i], MIDI_CHAN);
+          Tlc.set(tlcgreenPins[i], 3000);                      //switch respective led on
+          if (fsrReadings[8]<=HIGHTHRESH) {                   //main fsr has an additional LED not covered by the main led function
+            Tlc.set(tlcgreenPins[9],3000);             
+          } 
+          Tlc.update();
+          delay(DELAY_LEDS);                                           //tlc chip needs some extra time, without the delay msgs often dont arrive especially in forloops...
+        }
         startTime[i]=millisTime;                            //if note is send, activate bounce
         fsrBounce[i]=false;                                 //fsr is not bounced                                 
-        Tlc.set(tlcbluePins[i], 3000);                      //switch respective led on
-        if (fsrReadings[8]<=HIGHTHRESH) {                   //main fsr has an additional LED not covered by the main led function
-          Tlc.set(tlcbluePins[9],3000);             
-        } 
-        Tlc.update();
-        delay(DELAY_LEDS);                                           //tlc chip needs some extra time, without the delay msgs often dont arrive especially in forloops...
+
         //serial.println(fsrPins[i]);
       }
       fsrPress[i]=true;                                 //fsr is  pressed
       }
     else if (fsrReadings[i] > LOWTHRESH) {
       if (fsrPress[i]==true){
-      if (bank==0) usbMIDI.sendNoteOff(scale0[i], 127, MIDI_CHAN);
-      else if (bank==1) usbMIDI.sendNoteOff(scale1[i], 127, MIDI_CHAN);
-      clearLeds();
+      if (bank==0) {
+        usbMIDI.sendNoteOff(scale0[i], 127, MIDI_CHAN);
+        Tlc.set(tlcbluePins[i], 0);                      //switch respective led on
+          if (fsrReadings[8]>HIGHTHRESH) {                   //main fsr has an additional LED not covered by the main led function
+            Tlc.set(tlcbluePins[9],0);             
+          } 
+          Tlc.update();
+          delay(DELAY_LEDS); 
+      }
+      
+      else if (bank==1) {
+        usbMIDI.sendNoteOff(scale1[i], 127, MIDI_CHAN);
+        Tlc.set(tlcgreenPins[i], 0);                      //switch respective led on
+          if (fsrReadings[8]>HIGHTHRESH) {                   //main fsr has an additional LED not covered by the main led function
+            Tlc.set(tlcgreenPins[9],0);             
+          } 
+          Tlc.update();
+          delay(DELAY_LEDS); 
+        
+      }
+      //clearLeds();
       }
       fsrPress[i] = false;
     }
@@ -328,11 +358,11 @@ void readFsrs(){                          //reads and prints fsr values
   for(int i=0; i<FSR_N; i++){
     fsrReadings[i] = analogRead(fsrPins[i]);
   }
-  //for(int i=0;i<FSR_N; i++){
-  //  Serial.print (fsrReadings[i]);
-  //  Serial.print (" ");
-  //}
-  //Serial.println (" ");
+  for(int i=0;i<FSR_N; i++){
+    Serial.print (fsrReadings[i]);
+    Serial.print (" ");
+  }
+  Serial.println (" ");
 }
 
 void readButtons(){                       //reads buttons
@@ -350,6 +380,8 @@ void bankLeds() {                       //the led functions to show the differen
       Tlc.update(); 
       delay (DELAY_LEDS);                       //otherwise the chip cant handle the speed 
     }
+    //put millis delay here
+    clearLeds();
   }
   else if (bank==1) {
     clearLeds();
@@ -359,6 +391,8 @@ void bankLeds() {                       //the led functions to show the differen
       Tlc.update();  
       delay (DELAY_LEDS);                    
     }
+    //put millis delay here
+    clearLeds();
   }
   else if (bank==2) {
     clearLeds();
